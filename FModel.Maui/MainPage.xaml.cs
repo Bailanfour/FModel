@@ -1,111 +1,182 @@
 using Microsoft.Maui.Controls;
-using System.Collections.ObjectModel;
+using System;
+using System.Collections.Generic;
 using System.IO;
-using FModel.ViewModels;
-using FModel.Settings;
+using System.Threading;
 using System.Threading.Tasks;
+using FModel.Maui.Services;
+using Serilog;
 
 namespace FModel.Maui;
 
-public partial class MainPage : ContentPage
+public partial class MainPage : ContentPage, INotifyPropertyChanged
 {
-    private ObservableCollection<ArchiveItem> archives = new();
-    private string selectedArchivePath;
+    private string _selectedPakPath;
+    private string _outputDirectory;
+    private PakUnpacker _pakUnpacker;
+    private CancellationTokenSource _cts;
+    private bool _isUnpacking;
+
+    public bool IsUnpacking
+    {
+        get => _isUnpacking;
+        set
+        {
+            _isUnpacking = value;
+            OnPropertyChanged(nameof(IsUnpacking));
+        }
+    }
 
     public MainPage()
     {
         InitializeComponent();
-        ArchiveListView.ItemsSource = archives;
-        LoadArchives();
+        BindingContext = this;
+        _outputDirectory = Path.Combine(FileSystem.AppDataDirectory, "FModelExports");
+        OutputPathLabel.Text = $"Output: {_outputDirectory}";
     }
 
-    private void LoadArchives()
-    {
-        archives.Clear();
-        var externalDir = Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
-        if (!string.IsNullOrEmpty(externalDir))
-        {
-            foreach (var dir in Directory.GetDirectories(externalDir))
-            {
-                var dirInfo = new DirectoryInfo(dir);
-                var fileCount = Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Length;
-                archives.Add(new ArchiveItem
-                {
-                    Name = dirInfo.Name,
-                    FileCount = fileCount,
-                    Size = GetDirectorySize(dir),
-                    Path = dir
-                });
-            }
-        }
-    }
-
-    private string GetDirectorySize(string path)
+    private async void OnSelectPakClicked(object sender, EventArgs e)
     {
         try
         {
-            var size = new DirectoryInfo(path).EnumerateFiles("*.*", SearchOption.AllDirectories).Sum(fi => fi.Length);
-            if (size < 1024) return $"{size} B";
-            if (size < 1024 * 1024) return $"{size / 1024:F1} KB";
-            if (size < 1024 * 1024 * 1024) return $"{size / (1024 * 1024):F1} MB";
-            return $"{size / (1024 * 1024 * 1024):F1} GB";
-        }
-        catch
-        {
-            return "Unknown";
-        }
-    }
-
-    private async void OnSelectArchiveClicked(object sender, System.EventArgs e)
-    {
-        var result = await FilePicker.PickAsync(new PickOptions
-        {
-            PickerTitle = "Select Game Archive",
-            FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+            var result = await FilePicker.PickAsync(new PickOptions
             {
-                { DevicePlatform.Android, new[] { "application/octet-stream", "application/x-archive" } }
-            })
-        });
+                PickerTitle = "Select PAK File",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.Android, new[] { "application/octet-stream", "application/x-archive", "*.pak" } }
+                })
+            });
 
-        if (result != null)
+            if (result != null)
+            {
+                _selectedPakPath = result.FullPath;
+                PakInfoLabel.Text = $"Selected: {result.FileName}";
+                ExportButton.IsEnabled = false;
+            }
+        }
+        catch (Exception ex)
         {
-            selectedArchivePath = result.FullPath;
-            ArchiveInfoLabel.Text = $"Selected: {result.FileName}";
+            Log.Error(ex, "Failed to select PAK file");
+            await DisplayAlert("Error", "Failed to select file", "OK");
         }
     }
 
-    private void OnArchiveTapped(object sender, ItemTappedEventArgs e)
+    private async void OnLoadClicked(object sender, EventArgs e)
     {
-        if (e.Item is ArchiveItem item)
+        if (string.IsNullOrEmpty(_selectedPakPath))
         {
-            selectedArchivePath = item.Path;
-            ArchiveInfoLabel.Text = $"Selected: {item.Name}";
-        }
-    }
-
-    private async void OnLoadClicked(object sender, System.EventArgs e)
-    {
-        if (string.IsNullOrEmpty(selectedArchivePath))
-        {
-            await DisplayAlert("Error", "Please select an archive first", "OK");
+            await DisplayAlert("Error", "Please select a PAK file first", "OK");
             return;
         }
 
-        await Navigation.PushAsync(new AssetExplorerPage(selectedArchivePath));
+        IsUnpacking = true;
+        LoadButton.IsEnabled = false;
+        CancelButton.IsVisible = true;
+        ProgressBar.Progress = 0;
+        ProgressPercentage.Text = "0%";
+
+        try
+        {
+            _pakUnpacker = new PakUnpacker();
+            _pakUnpacker.OnProgress += OnUnpackerProgress;
+            _pakUnpacker.OnProgressPercentage += OnUnpackerProgressPercentage;
+
+            ProgressLabel.Text = "Initializing...";
+            await _pakUnpacker.InitializeAsync(_selectedPakPath, _outputDirectory);
+
+            var aesKey = AesKeyEntry.Text?.Trim();
+            if (!string.IsNullOrEmpty(aesKey))
+            {
+                await _pakUnpacker.AddAesKeyAsync(aesKey);
+            }
+
+            var assets = _pakUnpacker.GetAllAssets();
+            var assetCount = 0;
+            foreach (var _ in assets) assetCount++;
+
+            ProgressLabel.Text = $"Loaded {assetCount} assets";
+            ExportButton.IsEnabled = true;
+            LoadButton.IsEnabled = true;
+            CancelButton.IsVisible = false;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to load PAK file");
+            ProgressLabel.Text = $"Error: {ex.Message}";
+            await DisplayAlert("Error", $"Failed to load PAK: {ex.Message}", "OK");
+            LoadButton.IsEnabled = true;
+            CancelButton.IsVisible = false;
+        }
+        finally
+        {
+            IsUnpacking = false;
+        }
     }
 
-    private void OnClearClicked(object sender, System.EventArgs e)
+    private async void OnExportClicked(object sender, EventArgs e)
     {
-        selectedArchivePath = null;
-        ArchiveInfoLabel.Text = "No archive selected";
-        ArchiveListView.SelectedItem = null;
-    }
-}
+        if (_pakUnpacker == null)
+        {
+            await DisplayAlert("Error", "Please load a PAK file first", "OK");
+            return;
+        }
 
-public class ArchiveItem
-{
-    public string Name { get; set; }
-    public int FileCount { get; set; }
-    public string Size { get; set; }
-    public string Path { get; set; }
+        IsUnpacking = true;
+        ExportButton.IsEnabled = false;
+        LoadButton.IsEnabled = false;
+        CancelButton.IsVisible = true;
+        ProgressBar.Progress = 0;
+        ProgressPercentage.Text = "0%";
+
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            await _pakUnpacker.ExportAllAssetsAsync(_cts.Token);
+            await DisplayAlert("Success", "All assets exported successfully!", "OK");
+        }
+        catch (OperationCanceledException)
+        {
+            ProgressLabel.Text = "Export canceled";
+            await DisplayAlert("Canceled", "Export was canceled", "OK");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to export assets");
+            ProgressLabel.Text = $"Error: {ex.Message}";
+            await DisplayAlert("Error", $"Failed to export: {ex.Message}", "OK");
+        }
+        finally
+        {
+            IsUnpacking = false;
+            ExportButton.IsEnabled = true;
+            LoadButton.IsEnabled = true;
+            CancelButton.IsVisible = false;
+            _cts?.Dispose();
+        }
+    }
+
+    private void OnCancelClicked(object sender, EventArgs e)
+    {
+        _cts?.Cancel();
+        ProgressLabel.Text = "Canceling...";
+    }
+
+    private void OnUnpackerProgress(object sender, string message)
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            ProgressLabel.Text = message;
+        });
+    }
+
+    private void OnUnpackerProgressPercentage(object sender, int percentage)
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            ProgressBar.Progress = percentage / 100.0;
+            ProgressPercentage.Text = $"{percentage}%";
+        });
+    }
 }
