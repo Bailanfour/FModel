@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "FModel.Maui": {
+      "commandName": "Project"
+    },
+    "Android Emulator": {
+      "commandName": "AndroidEmulator",
+      "launchBrowser": false,
+      "launchUrl": "",
+      "environmentVariables": {},
+      "nativeDebugging": false
+    },
+    "Android Device": {
+      "commandName": "AndroidDevice",
+      "launchBrowser": false,
+      "launchUrl": "",
+      "environmentVariables": {},
+      "nativeDebugging": false
+    }
+  }
+}

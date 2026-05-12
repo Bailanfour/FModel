@@ -1,0 +1,68 @@
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="FModel.Maui.AssetExplorerPage"
+             BackgroundColor="{StaticResource Background}"
+             Title="Asset Explorer">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackLayout Grid.Row="0" BackgroundColor="{StaticResource SurfaceLight}" Padding="12" Orientation="Horizontal">
+            <Button 
+                Text="← Back" 
+                BackgroundColor="{StaticResource Primary}" 
+                TextColor="White" 
+                CornerRadius="8" 
+                Clicked="OnBackClicked" />
+            <SearchBar 
+                x:Name="SearchBar"
+                Placeholder="Search assets..."
+                BackgroundColor="{StaticResource Surface}"
+                TextColor="{StaticResource Text}"
+                PlaceholderColor="{StaticResource TextSecondary}"
+                Margin="12,0,0,0" />
+        </StackLayout>
+
+        <ScrollView Grid.Row="1">
+            <CollectionView 
+                x:Name="AssetCollectionView"
+                ItemsLayout="VerticalList"
+                SelectionMode="Single"
+                SelectionChanged="OnAssetSelected">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame BackgroundColor="{StaticResource Surface}" CornerRadius="8" Padding="12" Margin="8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="48" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Image 
+                                    Source="{Binding Icon}" 
+                                    WidthRequest="40" 
+                                    HeightRequest="40" 
+                                    Grid.Column="0" 
+                                    Aspect="AspectFit" />
+                                <StackLayout Grid.Column="1" Padding="8,0,0,0">
+                                    <Label Text="{Binding Name}" TextColor="{StaticResource Text}" FontSize="14" FontAttributes="Bold" />
+                                    <Label Text="{Binding Type}" TextColor="{StaticResource TextSecondary}" FontSize="12" />
+                                    <Label Text="{Binding Size}" TextColor="{StaticResource TextSecondary}" FontSize="10" />
+                                </StackLayout>
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </ScrollView>
+
+        <ActivityIndicator 
+            x:Name="LoadingIndicator"
+            IsRunning="False"
+            Color="{StaticResource Primary}"
+            HorizontalOptions="Center"
+            VerticalOptions="Center" />
+    </Grid>
+</ContentPage>

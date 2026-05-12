@@ -1,0 +1,5 @@
+<resources>
+  <style name="Maui.SplashTheme" parent="android:Theme.Light.NoTitleBar">
+    <item name="android:windowBackground">@drawable/splashscreen</item>
+  </style>
+</resources>
